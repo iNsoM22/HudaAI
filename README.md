@@ -1,4 +1,4 @@
-# HudaAI 
+# HudaAI 🕌
 
 An intelligent Islamic assistant powered by AI that provides contextual answers from the Quran and Hadith using Retrieval-Augmented Generation (RAG) technology.
 
@@ -25,10 +25,16 @@ HudaAI is a comprehensive Islamic knowledge system that combines:
 HudaAI/
 ├── app/
 │   ├── scripts/
-│   │   └── db.py           # Database connection setup
-│   ├── services/           # Business logic services
-│   └── utils/
-│       └── rag.py          # RAG implementation & vector operations
+│   │   ├── db.py                # Supabase client management
+│   │   ├── ingest_verses.py     # Ingest ayahs.csv into verse tables
+│   │   └── supabase_sql.sql     # SQL schema & RPC setup
+│   ├── services/
+│   │   └── agent.py             # Agentic RAG orchestration
+│   ├── utils/
+│   │   ├── retrieval.py         # Embeddings, storage, semantic search
+│   │   └── rag.py               # (Legacy) resume/doc chunks utilities
+│   └── ui/
+│       └── app.py               # Streamlit demo interface
 ├── notebooks/
 │   └── Data_Preprocessing.ipynb  # Data collection and preprocessing
 ├── .env.example            # Environment variables template
@@ -72,19 +78,22 @@ HudaAI/
    HUGGINGFACE_API_KEY=your_huggingface_api_token
    ```
 
-5. **Set up Supabase Database**
+5. **Set up Supabase Database (Verses RAG)**
+
+   Open `app/scripts/supabase_sql.sql` in the Supabase SQL editor and run it. This will:
+   - Enable `pgvector`
+   - Create `verse_chunks` and `verse_embeddings` tables (dimension 384 for MiniLM)
+   - Create `match_verses` RPC function for cosine similarity search
    
-   Create the following tables in your Supabase project:
-   
-   - `documents` table with columns:
-     - `id` (uuid, primary key)
-     - `user_id` (text)
-     - `resume_id` (text)
-     - `content` (text)
-     - `embedding` (vector)
-     - `metadata` (jsonb)
-   
-   - Create the `match_resume_chunks` RPC function for similarity search
+   Ensure you have the environment variables in `.env`:
+   ```env
+   SUPABASE_URL=...
+   SUPABASE_KEY=...
+   HUGGINGFACE_API_KEY=...
+   GOOGLE_API_KEY=...          # For generation (Gemini model)
+   GOOGLE_MODEL=gemini-1.5-flash
+   EMBEDDINGS_MODEL=sentence-transformers/all-MiniLM-L6-v2
+   ```
 
 ### Usage
 
@@ -100,32 +109,31 @@ HudaAI/
    - Process Arabic (Simple & Uthmani) and English translations
    - Generate structured CSV files (`surahs.csv`, `ayahs.csv`)
 
-2. **Vector Storage**
-   
-   Use the RAG utilities to store embeddings:
-   ```python
-   from app.utils.rag import get_embeddings, split_text, store_vector
-   
-   # Initialize embeddings model
-   embeddings = get_embeddings()
-   
-   # Split text into chunks
-   chunks = split_text(your_text)
-   
-   # Store in vector database
-   store_vector(user_id, resume_id, chunks, embeddings)
+2. **Ingest Verses Into Vector Store**
+   After generating `ayahs.csv` via the notebook, ingest:
+   ```bash
+   python -m app.scripts.ingest_verses --csv ayahs.csv --limit 200
+   ```
+   (Remove `--limit` to process all verses.)
+
+3. **Run Streamlit Demo**
+   ```bash
+   streamlit run app/ui/app.py
    ```
 
-3. **Semantic Search**
-   
-   Retrieve relevant content:
+4. **Programmatic Semantic Search**
    ```python
-   from app.utils.rag import retrieve_vectors, get_embeddings
-   
-   embeddings = get_embeddings()
-   query_vector = embeddings.embed_query("your search query")
-   
-   results = retrieve_vectors(user_id, query_vector, top_k=5)
+   from app.utils.retrieval import semantic_search
+   hits = semantic_search("mercy", top_k=5)
+   for h in hits:
+       print(h["verse_id"], h["similarity"], h["content"][:120])
+   ```
+
+5. **Agentic Answer Generation**
+   ```python
+   from app.services.agent import answer_query
+   result = answer_query("What does the Quran say about patience?", top_k=5)
+   print(result["answer"])  # Grounded response
    ```
 
 ## 🔧 Technologies Used
@@ -141,9 +149,10 @@ HudaAI/
 - **[Hadith API](https://hadithapi.com/docs/chapters)**: Authenticated Hadith collections
 
 ### AI/ML
-- **Sentence Transformers**: Vector embeddings for semantic search
-- **RAG (Retrieval-Augmented Generation)**: Context-aware response generation
-- **Vector Search**: Similarity-based document retrieval
+- **Sentence Transformers**: MiniLM embeddings (384-dim)
+- **Agentic RAG**: Retrieval + structured prompt construction
+- **Google Gemini**: Generative layer (configurable)
+- **Vector Search (pgvector)**: Cosine similarity via RPC
 
 ## 📊 Data Processing
 
@@ -190,9 +199,12 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 - [Supabase](https://supabase.com/) for the database infrastructure
 - [HuggingFace](https://huggingface.co/) for the embeddings models
 
-## 📧 Contact
+## 📧 Contact & Next Steps
 
-For questions or feedback, please open an issue on GitHub.
+Open an issue for feature requests or improvements. Planned enhancements:
+- Hadith ingestion & unified retrieval across Quran + Hadith
+- FastAPI backend exposing `/search` and `/answer` endpoints
+- Authentication & per-user history tracking
 
 ---
 
