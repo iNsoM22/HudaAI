@@ -1,4 +1,14 @@
-# HudaAI 🕌
+---
+title: HudaAI
+colorFrom: blue
+colorTo: red
+sdk: streamlit
+sdk_version: 1.39.0
+app_file: page.py
+pinned: false
+---
+
+# HudaAI
 
 An intelligent Islamic assistant powered by AI that provides contextual answers from the Quran and Hadith using Retrieval-Augmented Generation (RAG) technology.
 
