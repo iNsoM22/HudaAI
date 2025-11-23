@@ -22,7 +22,7 @@ from langgraph.checkpoint.memory import MemorySaver
 from pydantic import BaseModel, Field
 
 from app.utils.retrieval import semantic_search_hadiths, semantic_search_quran, get_records
-from app.config.secrets import GOOGLE_API_KEY, GOOGLE_MODEL
+from app.config.secrets import GOOGLE_API_KEY, GOOGLE_MODEL, GOOGLE_SERPER_KEY
 
 
 # ============================================================================
@@ -38,6 +38,7 @@ class AgentState(TypedDict):
     summary: str | None
     needs_summary: bool
     needs_context_expansion: bool
+    needs_web_search: bool
     tool_outputs: dict
     final_answer: str | None
 
@@ -58,6 +59,10 @@ class QueryAnalysis(BaseModel):
     needs_context_expansion: bool = Field(
         default=False,
         description="Whether query requires broader verse context"
+    )
+    needs_web_search: bool = Field(
+        default=False,
+        description="Whether query requires additional context from web search (current events, specific facts, or unclear terminology)"
     )
     search_quran: bool = Field(
         default=True,
@@ -203,6 +208,86 @@ def expand_context(source_type: str, identifier: str, context_window: int = 3) -
     return result
 
 
+@tool
+def web_search(query: str, num_results: int = 5) -> dict:
+    """Search the web for additional context using Google Serper API.
+    
+    Use this when:
+    - Query references current events or recent developments
+    - Specific facts or statistics are needed
+    - Technical Islamic terminology requires clarification
+    - Retrieved Quran/Hadith contexts are insufficient
+    
+    Args:
+        query: Search query to find additional context
+        num_results: Number of search results to retrieve (1-10)
+        
+    Returns:
+        Dictionary with search results and metadata
+    """
+    import requests
+    
+    if not GOOGLE_SERPER_KEY:
+        return {
+            "status": "error",
+            "error": "Google Serper API key not configured",
+            "results": []
+        }
+    
+    try:
+        url = "https://google.serper.dev/search"
+        payload = {
+            "q": query,
+            "num": min(num_results, 10)
+        }
+        headers = {
+            "X-API-KEY": GOOGLE_SERPER_KEY,
+            "Content-Type": "application/json"
+        }
+        
+        response = requests.post(url, json=payload, headers=headers, timeout=10)
+        response.raise_for_status()
+        
+        data = response.json()
+        
+        # Extract organic results
+        organic_results = data.get("organic", [])
+        
+        formatted_results = []
+        for idx, result in enumerate(organic_results[:num_results], 1):
+            formatted_results.append({
+                "position": idx,
+                "title": result.get("title", "No title"),
+                "link": result.get("link", ""),
+                "snippet": result.get("snippet", "No description available"),
+                "source": result.get("link", "").split("/")[2] if result.get("link") else "Unknown"
+            })
+        
+        return {
+            "status": "success",
+            "query": query,
+            "results": formatted_results,
+            "count": len(formatted_results),
+            "search_metadata": {
+                "total_results": data.get("searchInformation", {}).get("totalResults", "0"),
+                "time_taken": data.get("searchInformation", {}).get("formattedSearchTime", "0s")
+            }
+        }
+        
+    except requests.exceptions.RequestException as e:
+        return {
+            "status": "error",
+            "error": f"Web search failed: {str(e)}",
+            "results": []
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "error": f"Unexpected error during web search: {str(e)}",
+            "results": []
+        }
+
+
 # ============================================================================
 # LangGraph Node Functions
 # ============================================================================
@@ -248,8 +333,14 @@ Determine the best approach by considering:
 5. **Context Requirements**:
    - Needs summary: When query asks for "overview", "main teachings", "key points"
    - Needs context expansion: When understanding requires surrounding verses/hadiths (narrative passages, conditional statements)
+   - Needs web search: When query involves:
+     • Current events or contemporary issues ("recent rulings", "modern scholars say")
+     • Specific facts, statistics, or historical dates that may not be in Quran/Hadith
+     • Technical terminology or unfamiliar concepts needing clarification
+     • Questions about Islamic practices in specific countries/contexts
+     • References to contemporary scholars or organizations
 
-Provide reasoning that explains which Islamic concepts/terms were detected, which sources to search, and why the chosen approach will retrieve the most relevant content."""
+Provide reasoning that explains which Islamic concepts/terms were detected, which sources to search, whether web search is needed, and why the chosen approach will retrieve the most relevant content."""
     
     analysis: QueryAnalysis = structured_llm.invoke([HumanMessage(content=analysis_prompt)])
     
@@ -257,11 +348,13 @@ Provide reasoning that explains which Islamic concepts/terms were detected, whic
         **state,
         "needs_summary": analysis.needs_summary,
         "needs_context_expansion": analysis.needs_context_expansion,
+        "needs_web_search": analysis.needs_web_search,
         "tool_outputs": {
             "analysis": {
                 **analysis.model_dump(),
                 "search_quran": analysis.search_quran,
-                "search_hadith": analysis.search_hadith
+                "search_hadith": analysis.search_hadith,
+                "needs_web_search": analysis.needs_web_search
             }
         }
     }
@@ -314,6 +407,28 @@ def retrieve_node(state: AgentState) -> AgentState:
             **state.get("tool_outputs", {}),
             "retrieval": retrieval_info,
             "total_retrieved": len(all_results)
+        }
+    }
+
+
+def web_search_node(state: AgentState) -> AgentState:
+    """Execute web search for additional context."""
+    # Create a focused search query
+    original_query = state["query"]
+    
+    # Enhance query with Islamic context for better results
+    search_query = f"{original_query} Islamic perspective scholarly explanation"
+    
+    tool_result = web_search.invoke({
+        "query": search_query,
+        "num_results": 5
+    })
+    
+    return {
+        **state,
+        "tool_outputs": {
+            **state.get("tool_outputs", {}),
+            "web_search": tool_result
         }
     }
 
@@ -422,6 +537,16 @@ def synthesize_answer(state: AgentState) -> AgentState:
     if state.get("summary"):
         summary_extra = f"\n\nPre-Summary:\n{state['summary']}\n"
     
+    # Add web search results if available
+    web_search_extra = ""
+    if state.get("tool_outputs", {}).get("web_search"):
+        web_result = state["tool_outputs"]["web_search"]
+        if web_result.get("status") == "success" and web_result.get("results"):
+            web_search_extra = "\n\nAdditional Context from Web Search:\n"
+            for idx, result in enumerate(web_result["results"][:3], 1):
+                web_search_extra += f"{idx}. **{result['title']}** ({result['source']})\n"
+                web_search_extra += f"   {result['snippet']}\n\n"
+    
     system_instructions = """You are a knowledgeable Islamic assistant helping someone understand Quranic verses and Hadiths. Your role is to provide accurate, reverent, and contextually rich explanations.
 
 CORE PRINCIPLES:
@@ -441,7 +566,7 @@ RESPONSE STRUCTURE:
 - Connect related teachings across different verses
 - Conclude with a cohesive summary when appropriate"""
     
-    user_prompt = f"""User's Question: {state["query"]}{summary_extra}
+    user_prompt = f"""User's Question: {state["query"]}{summary_extra}{web_search_extra}
 
 Retrieved Quranic Verses and Hadiths:
 {joined}
@@ -450,7 +575,8 @@ INSTRUCTIONS:
 Analyze the provided texts carefully, identify the key themes and teachings most relevant to the user's question, then provide a comprehensive, well-structured answer that:
 - Directly addresses their question
 - Synthesizes multiple verses/hadiths from your knowledge or provided ones, to show the complete picture
-- Cites sources naturally within your explanation
+- If web search context is provided, use it to clarify contemporary issues or provide additional perspective
+- Cites sources naturally within your explanation (prioritize Quran/Hadith citations)
 - Explains any important concepts or terminology
 
 Your response:"""    
@@ -486,6 +612,19 @@ def should_expand_context(state: AgentState) -> Literal["expand", "continue"]:
     return "continue"
 
 
+def should_web_search(state: AgentState) -> Literal["web_search", "summarize", "synthesize"]:
+    """Route to web search if needed, otherwise proceed to summary or synthesis."""
+    # Check if web search is needed
+    if state.get("needs_web_search", False):
+        return "web_search"
+    
+    # Otherwise check if summary is needed
+    if state.get("needs_summary", False) and state.get("contexts"):
+        return "summarize"
+    
+    return "synthesize"
+
+
 # ============================================================================
 # Graph Construction
 # ============================================================================
@@ -498,6 +637,7 @@ def create_agent_graph():
     # Add nodes
     workflow.add_node("analyze", analyze_query)
     workflow.add_node("retrieve", retrieve_node)
+    workflow.add_node("web_search", web_search_node)
     workflow.add_node("summarize", summarize_node)
     workflow.add_node("synthesize", synthesize_answer)
     
@@ -505,9 +645,20 @@ def create_agent_graph():
     workflow.set_entry_point("analyze")
     workflow.add_edge("analyze", "retrieve")
     
-    # Conditional routing after retrieval
+    # Conditional routing after retrieval - check for web search first
     workflow.add_conditional_edges(
         "retrieve",
+        should_web_search,
+        {
+            "web_search": "web_search",
+            "summarize": "summarize",
+            "synthesize": "synthesize"
+        }
+    )
+    
+    # After web search, check for summarization
+    workflow.add_conditional_edges(
+        "web_search",
         should_summarize,
         {
             "summarize": "summarize",
@@ -556,6 +707,7 @@ class GraphAgent:
             summary=None,
             needs_summary=False,
             needs_context_expansion=False,
+            needs_web_search=False,
             tool_outputs={},
             final_answer=None
         )
@@ -606,6 +758,7 @@ class GraphAgent:
             summary=None,
             needs_summary=False,
             needs_context_expansion=False,
+            needs_web_search=False,
             tool_outputs={},
             final_answer=None
         )

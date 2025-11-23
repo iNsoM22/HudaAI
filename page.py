@@ -219,6 +219,30 @@ def display_execution_steps(result: Dict[str, Any], step_containers: Dict[str, A
             else:
                 st.error(f"Summarization failed: {summary_data.get('error', 'Unknown error')}")
     
+    # Step 3.5: Web Search (if executed)
+    if "web_search" in tool_outputs:
+        web_data = tool_outputs["web_search"]
+        status = web_data.get("status", "unknown")
+        
+        with st.expander(
+            f"{'✅' if status == 'success' else '❌'} Step 3: 🌐 Web Search for Additional Context",
+            expanded=True
+        ):
+            if status == "success":
+                results = web_data.get("results", [])
+                st.success(f"Found {len(results)} relevant web sources for contemporary context")
+                
+                st.markdown("**Web Search Results:**")
+                for idx, result in enumerate(results, 1):
+                    st.markdown(f"**{idx}. {result['title']}**")
+                    st.caption(f"🔗 Source: {result['source']}")
+                    st.write(result['snippet'])
+                    st.markdown(f"[Read more]({result['link']})")
+                    if idx < len(results):
+                        st.markdown("---")
+            else:
+                st.error(f"Web search failed: {web_data.get('error', 'Unknown error')}")
+    
     # Step 4: Final Synthesis
     with st.expander("✅ Step 4: LLM Answer Synthesis", expanded=False):
         if result.get("answer"):
