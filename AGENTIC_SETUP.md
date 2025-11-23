@@ -1,5 +1,7 @@
 # 🤖 Agentic RAG Architecture - Implementation Summary
 
+## > Deprecated, Moved to Graph Agent.
+
 ## Overview
 
 HudaAI has been upgraded from a basic RAG system to a **production-grade agentic system** with pluggable tools, state management, and interactive visualization.

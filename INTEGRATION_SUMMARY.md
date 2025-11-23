@@ -46,13 +46,6 @@ The GraphAgent and page.py UI are now **fully compatible** with complete dual-so
 10. complete → Final result with all contexts
 ```
 
-### Non-Streaming Mode
-```
-1. Executes entire graph
-2. Returns complete result dictionary
-3. Includes metrics if requested
-```
-
 ## Files Modified
 
 ✅ `app/services/graph_agent.py`
@@ -113,7 +106,6 @@ Then try queries like:
 
 | Feature | GraphAgent | page.py | Status |
 |---------|-----------|---------|--------|
-| Non-streaming | ✅ `answer()` | ✅ Supported | ✅ |
 | Streaming | ✅ `answer_stream()` | ✅ Supported | ✅ |
 | Quran retrieval | ✅ Built-in | ✅ Displays | ✅ |
 | Hadith retrieval | ✅ Built-in | ✅ Displays | ✅ |
@@ -144,5 +136,5 @@ The integration is complete, tested, and ready for use. Both streaming and non-s
 ---
 
 **Last Updated**: November 23, 2025
-**Version**: 1.0.0
+**Version**: 1.0.2
 **Status**: Stable ✅
