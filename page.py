@@ -6,8 +6,9 @@ from typing import List, Dict, Any
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if PROJECT_ROOT not in sys.path:
     sys.path.append(PROJECT_ROOT)
+    
 
-from app.services.agent import answer_query  # expects contexts list
+from app.services.agent import answer_query
 from app.utils.retrieval import semantic_search
 
 st.set_page_config(page_title="HudaAI Verse Explorer", layout="wide")

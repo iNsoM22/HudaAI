@@ -6,14 +6,8 @@ an API framework (FastAPI, Django, etc.)
 
 from typing import Dict, Any, List
 from langchain_google_genai import ChatGoogleGenerativeAI
-from dotenv import load_dotenv
-import os
 from app.utils.retrieval import semantic_search
-
-load_dotenv()
-
-GOOGLE_MODEL = os.getenv("GOOGLE_MODEL", "gemini-2.5-flash")
-GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
+from app.config.secrets import GOOGLE_API_KEY, GOOGLE_MODEL
 
 
 def _get_llm():

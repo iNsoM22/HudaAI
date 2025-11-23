@@ -1,12 +1,6 @@
 from contextvars import ContextVar
 from supabase import create_client
-from dotenv import load_dotenv
-import os
-
-load_dotenv()
-
-SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+from app.config.secrets import SUPABASE_KEY, SUPABASE_URL
 
 if not SUPABASE_URL or not SUPABASE_KEY:
     raise RuntimeError("SUPABASE_URL or SUPABASE_KEY missing in environment. Check your .env file.")

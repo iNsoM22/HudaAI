@@ -4,21 +4,12 @@ Designed to be framework-agnostic so it can be reused both inside
 Streamlit demos and future backend API services.
 """
 
-import os
 from typing import List, Dict, Any, Tuple
-from dotenv import load_dotenv
-from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_huggingface import HuggingFaceEndpointEmbeddings
 from app.scripts.db import get_supabase_client
+from app.config.secrets import HF_MODEL, HF_TOKEN, EMBED_MODE
 import torch
 
-load_dotenv()
-
-HF_MODEL = os.getenv("EMBEDDINGS_MODEL")
-HF_TOKEN = os.getenv("HUGGINGFACE_API_KEY")
-EMBED_MODE = os.getenv("EMBED_MODE_OFFLINE") == "TRUE"
-
-EMBED_DIM = 768
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
