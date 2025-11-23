@@ -118,8 +118,15 @@ HudaAI/
 
 3. **Run Streamlit Demo**
    ```bash
-   streamlit run app/ui/app.py
+   streamlit run page.py
    ```
+   
+   The interactive UI now shows:
+   - 🔄 Real-time agent execution steps
+   - 📊 Performance metrics (timing, similarity scores)
+   - ✅ Visual indicators for each tool execution
+   - 📈 Progress tracking through the pipeline
+   - 🔍 Expandable sections for detailed inspection
 
 4. **Programmatic Semantic Search**
    ```python
@@ -136,7 +143,96 @@ HudaAI/
    print(result["answer"])  # Grounded response
    ```
 
-## 🔧 Technologies Used
+### Agentic Tools Architecture
+
+The agent now uses a **production-grade tool system** with two implementations:
+
+#### 1. Enhanced Traditional Agent (`Agent`)
+- Heuristic or LLM-based tool selection
+- Execution metrics and error tracking
+- Pluggable tool architecture
+
+#### 2. LangGraph Agent (`GraphAgent`) ⭐ Recommended
+- TypedDict state management
+- Conditional routing based on query analysis
+- Memory checkpointing for conversations
+- Built-in observability and debugging
+
+**Available Tools:**
+- `retrieval`: Semantic search over verse embeddings
+- `summarize_contexts`: Thematic summarization with bullet points
+- Extensible for custom tools (metadata lookup, translation comparison, etc.)
+
+**Basic Usage:**
+```python
+from app.services.agent import Agent, answer_query
+
+# Traditional agent with metrics
+agent = Agent()
+result = agent.answer("What does the Quran say about patience?", include_metrics=True)
+print(result["answer"])
+print(f"Execution time: {result['metrics']['total_execution_time_ms']}ms")
+
+# Or use the simple function API
+result = answer_query("Tell me about patience", top_k=5)
+```
+
+**LangGraph Agent (Production):**
+```python
+from app.services.graph_agent import GraphAgent
+
+agent = GraphAgent()
+
+# Execute with conversation memory
+result = agent.answer("What is sabr?", thread_id="user_123")
+print(result["answer"])
+
+# Continue conversation in same thread
+result = agent.answer("Give me specific verses", thread_id="user_123")
+
+# Inspect state
+state = agent.get_state(thread_id="user_123")
+
+# Visualize graph
+print(agent.visualize())  # Returns Mermaid diagram
+```
+
+**Custom Tool Example:**
+```python
+from app.services import tools as toollib
+from pydantic import BaseModel, Field
+
+class VerseMetadataInput(BaseModel):
+    surah_id: int = Field(..., description="Surah number")
+    verse_id: int = Field(..., description="Verse number")
+
+class VerseMetadataTool(toollib.Tool):
+    name = "verse_metadata"
+    description = "Fetch revelation context and theme for a specific verse"
+    input_model = VerseMetadataInput
+    metadata = toollib.ToolMetadata(category="retrieval", latency_estimate="fast")
+    
+    def run(self, **kwargs):
+        data = self.validate(**kwargs)
+        # Query database for metadata
+        return {
+            "status": "success",
+            "revelation_type": "Meccan",
+            "theme": "Faith and perseverance"
+        }
+
+# Add to agent
+agent = Agent(tools=[*toollib.default_tools(lambda: None), VerseMetadataTool()])
+```
+
+**Tool Selection Strategies:**
+```python
+# Heuristic (fast, rule-based)
+agent = Agent(tool_selection_strategy="heuristic")
+
+# LLM-based (intelligent, uses structured output)
+agent = Agent(tool_selection_strategy="llm")
+```## 🔧 Technologies Used
 
 ### Backend
 - **Python**: Core programming language
